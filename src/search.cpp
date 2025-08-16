@@ -860,7 +860,46 @@ Value Search::Worker::search(
         assert((ss - 1)->currentMove != Move::null());
 
         // Null move dynamic reduction based on depth
-        Depth R = 7 + depth / 3;
+        const int R_BASE_OFFSET = 7;
+        const int R_BASE_DIV    = 3;
+        int r_base = R_BASE_OFFSET + depth / R_BASE_DIV;
+
+        int raw = 0;
+
+        {
+            Value evalMargin = ss->staticEval - beta;
+
+            const int posThresh = 150 + depth * 18;
+            const int negThresh = 120 + depth * 10;
+
+            if (evalMargin > Value(posThresh))
+                raw += (int(evalMargin) + posThresh / 2) / posThresh;
+            else if (evalMargin < Value(-negThresh))
+                raw -= (int(-evalMargin) + negThresh / 2) / negThresh;
+        }
+
+        {
+            int ttPenalty = std::max(1, 3 - depth / 6);
+            if (ss->ttPv)
+                raw -= ttPenalty;
+        }
+
+        if ((ss - 2)->staticEval != VALUE_NONE && ss->staticEval > (ss - 2)->staticEval)
+            raw -= 1;
+
+        int abs_raw = std::abs(raw);
+        int finalAdj = 0;
+        if (abs_raw > 0) {
+            int maxAdj = std::min(4, 1 + depth / 10);
+            int scaled = 1 + int(std::sqrt((double)abs_raw));
+            if (scaled > maxAdj) scaled = maxAdj;
+            finalAdj = (raw > 0) ? scaled : -scaled;
+        }
+
+        int R_int = r_base + finalAdj;
+        if (R_int < 2) R_int = 2;
+        if (R_int > depth - 1) R_int = depth - 1;
+        Depth R = static_cast<Depth>(R_int);
 
         ss->currentMove                   = Move::null();
         ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
