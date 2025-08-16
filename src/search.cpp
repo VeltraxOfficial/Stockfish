@@ -860,7 +860,58 @@ Value Search::Worker::search(
         assert((ss - 1)->currentMove != Move::null());
 
         // Null move dynamic reduction based on depth
-        Depth R = 7 + depth / 3;
+        Value evalMargin = ss->staticEval - (beta - 19 * depth + 403);
+        int   evalCp     = static_cast<int>(evalMargin);
+        double adj = 0.0;
+
+        if (depth >= 4) {
+            if (evalCp > 250) {
+                double lead = static_cast<double>(evalCp - 250);
+                adj += 1.0 + std::min(lead / 600.0, 3.0);
+            }
+
+            if (!improving)
+                adj -= 1.0;
+
+            int pv_pen = std::max(1, 2 - static_cast<int>(depth) / 12);
+            if (PvNode)
+                adj -= pv_pen;
+            if (ss->ttPv)
+                adj -= pv_pen;
+
+            if (ss->inCheck)
+                adj -= 2.0;
+
+            {
+                int streak = (ss - 1)->quietMoveStreak;
+                if (streak >= 1)
+                    adj += static_cast<double>(std::min(1 + streak / 4, 2));
+            }
+
+            if (opponentWorsening)
+                adj -= 1.0;
+
+            if ((ss - 1)->continuationHistory) {
+                int contConf = static_cast<int>((*((ss - 1)->continuationHistory))[0][0]);
+                if (contConf > 500)
+                    adj += 1.0;
+                else if (contConf > 250)
+                    adj += 0.5;
+                else if (contConf < -500)
+                    adj -= 1.0;
+            }
+        }
+
+        double damping = std::max(0.7, 1.0 - 0.018 * static_cast<double>(depth));
+        adj *= damping;
+
+        int finalAdj = static_cast<int>(std::round(adj));
+        finalAdj = std::clamp(finalAdj, -3, 3);
+
+        int r_base = 7 + depth / 3;
+        int R_int  = r_base + finalAdj;
+        R_int      = std::clamp(R_int, 2, std::max(2, static_cast<int>(depth) - 1));
+        Depth R    = static_cast<Depth>(R_int);
 
         ss->currentMove                   = Move::null();
         ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
