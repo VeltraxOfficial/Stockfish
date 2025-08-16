@@ -860,7 +860,45 @@ Value Search::Worker::search(
         assert((ss - 1)->currentMove != Move::null());
 
         // Null move dynamic reduction based on depth
-        Depth R = 7 + depth / 3;
+        const int R_BASE_OFFSET = 7;
+        const int R_BASE_DIV    = 3;
+        int r_base = R_BASE_OFFSET + depth / R_BASE_DIV;
+        double adj = 0.0;
+        {
+            Value evalMargin = ss->staticEval - beta;
+            int evalCp = int(evalMargin);
+            const int NEG_START = -50 - depth * 6;
+            if (evalCp < NEG_START) {
+                double deficit = double(-evalCp);
+                adj -= std::min(3.0, 0.6 + deficit / 350.0 + depth / 25.0);
+            }
+            const int POS_START = 300 + depth * 10;
+            if (evalCp > POS_START) {
+                double lead = double(evalCp);
+                adj += std::min(1.5, 0.6 + lead / 900.0 + depth / 50.0);
+            }
+        }
+        if ((ss - 2)->staticEval != VALUE_NONE && ss->staticEval > (ss - 2)->staticEval) {
+            if (depth >= 14 && ((ss - 1)->quietMoveStreak >= 3) && !ss->ttPv && !ss->inCheck)
+                adj += 0.7;
+        }
+        if (ss->ttPv)
+            adj -= 1.0;
+        if (ss->inCheck)
+            adj -= 2.0;
+        if (adj > 0.0) {
+            bool quiet = ((ss - 1)->quietMoveStreak >= 3) && !ss->ttPv && !ss->inCheck && !ttCapture;
+            if (!quiet || depth < 6)
+                adj = 0.0;
+        }
+        int finalAdj;
+        if (adj > 0.0) finalAdj = int(std::floor(adj));
+        else finalAdj = int(std::ceil(adj));
+        finalAdj = std::clamp(finalAdj, -3, 1);
+        int R_int = r_base + finalAdj;
+        if (R_int < 2)       R_int = 2;
+        if (R_int > depth-1) R_int = depth-1;
+        Depth R = static_cast<Depth>(R_int);
 
         ss->currentMove                   = Move::null();
         ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
