@@ -860,7 +860,49 @@ Value Search::Worker::search(
         assert((ss - 1)->currentMove != Move::null());
 
         // Null move dynamic reduction based on depth
-        Depth R = 7 + depth / 3;
+        const int R_BASE_OFFSET = 7;
+        const int R_BASE_DIV    = 3;
+        int r_base = R_BASE_OFFSET + depth / R_BASE_DIV;
+        double adj = 0.0;
+
+        const int nullMoveMargin = -19 * depth + 403;
+        Value evalMargin = ss->staticEval - (beta + nullMoveMargin);
+        int evalCp = int(evalMargin);
+
+        const int POS_THRESHOLD = 100;
+        if (evalCp > POS_THRESHOLD) {
+            double lead = std::min(double(evalCp - POS_THRESHOLD), 200.0);
+            adj += 0.4 + lead / 500.0;
+        }
+
+        const int NEG_THRESHOLD = -30;
+        if (evalCp < NEG_THRESHOLD) {
+            double deficit = std::min(double(NEG_THRESHOLD - evalCp), 100.0);
+            adj -= 0.3 + deficit / 300.0;
+        }
+
+        if ((ss - 2)->staticEval != VALUE_NONE && ss->staticEval > (ss - 2)->staticEval) {
+            if (depth >= 8 && ((ss - 1)->quietMoveStreak >= 2) && !ss->ttPv && !ss->inCheck)
+                adj += 0.4;
+        }
+
+        if (ss->ttPv)
+            adj -= 0.6;
+        if (ss->inCheck)
+            adj -= 1.2;
+
+        if (adj > 0.0) {
+            bool quiet = ((ss - 1)->quietMoveStreak >= 2) && !ss->ttPv && !ss->inCheck && !ttCapture;
+            if (!quiet || depth < 5)
+                adj = 0.0;
+        }
+
+        int finalAdj = static_cast<int>(std::round(adj));
+        finalAdj = std::clamp(finalAdj, -1, 1);
+
+        int R_int = r_base + finalAdj;
+        R_int = std::clamp(R_int, 2, depth-1);
+        Depth R = static_cast<Depth>(R_int);
 
         ss->currentMove                   = Move::null();
         ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
