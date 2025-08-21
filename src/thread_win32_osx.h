@@ -75,4 +75,82 @@ using NativeThread = std::thread;
 
 #endif
 
+#ifdef _WIN32
+#include <windows.h>
+#include <vector>
+#include <unordered_map>
+#include <memory>
+#include <mutex>
+
+static const std::vector<GROUP_AFFINITY>& sf_perf_core_affinities() {
+    static std::vector<GROUP_AFFINITY> perf;
+    static std::once_flag initFlag;
+    std::call_once(initFlag, []() {
+        DWORD len = 0;
+        BOOL ok = GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
+        if (ok || GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+            return;
+        std::unique_ptr<char[]> buffer(new (std::nothrow) char[len]);
+        if (!buffer)
+            return;
+        PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX info =
+            reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.get());
+        if (!GetLogicalProcessorInformationEx(RelationProcessorCore, info, &len))
+            return;
+        BYTE maxClass = 0;
+        BYTE* base = reinterpret_cast<BYTE*>(info);
+        DWORD offset = 0;
+        while (offset < len) {
+            PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX item =
+                reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(base + offset);
+            if (item->Relationship == RelationProcessorCore) {
+                if (item->Processor.EfficiencyClass > maxClass)
+                    maxClass = item->Processor.EfficiencyClass;
+            }
+            offset += item->Size;
+        }
+        if (maxClass == 0)
+            return;
+        std::unordered_map<WORD, KAFFINITY> maskMap;
+        offset = 0;
+        while (offset < len) {
+            PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX item =
+                reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(base + offset);
+            if (item->Relationship == RelationProcessorCore
+                && item->Processor.EfficiencyClass == maxClass) {
+                WORD gc = item->Processor.GroupCount;
+                for (WORD i = 0; i < gc; ++i) {
+                    const GROUP_AFFINITY& gm = item->Processor.GroupMask[i];
+                    maskMap[gm.Group] |= gm.Mask;
+                }
+            }
+            offset += item->Size;
+        }
+        for (auto &kv : maskMap) {
+            GROUP_AFFINITY ga = {};
+            ga.Group = kv.first;
+            ga.Mask = kv.second;
+            perf.push_back(ga);
+        }
+    });
+    return perf;
+}
+
+static inline void sf_apply_pcore_affinity_to_current_thread() {
+    const auto &perf = sf_perf_core_affinities();
+    if (perf.empty())
+        return;
+    GROUP_AFFINITY curr = {};
+    if (!GetThreadGroupAffinity(GetCurrentThread(), &curr))
+        return;
+    for (const auto &ga : perf) {
+        if (ga.Group == curr.Group) {
+            curr.Mask = ga.Mask;
+            SetThreadGroupAffinity(GetCurrentThread(), &curr, nullptr);
+            break;
+        }
+    }
+}
+#endif
+
 #endif  // #ifndef THREAD_WIN32_OSX_H_INCLUDED
