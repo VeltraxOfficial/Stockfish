@@ -53,6 +53,9 @@ Thread::Thread(Search::SharedState&                    sharedState,
         // the Worker allocation. Ideally we would also allocate the SearchManager
         // here, but that's minor.
         this->numaAccessToken = binder();
+#ifdef _WIN32
+        sf_apply_pcore_affinity_to_current_thread();
+#endif
         this->worker =
           std::make_unique<Search::Worker>(sharedState, std::move(sm), n, this->numaAccessToken);
     });
