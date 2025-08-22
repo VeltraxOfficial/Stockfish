@@ -94,20 +94,27 @@ void Thread::clear_worker() {
 
 // Blocks on the condition variable until the thread has finished searching
 void Thread::wait_for_search_finished() {
-
-    std::unique_lock<std::mutex> lk(mutex);
-    cv.wait(lk, [&] { return !searching; });
+    if (has_native_thread) {
+        std::unique_lock<std::mutex> lk(mutex);
+        cv.wait(lk, [&] { return !searching; });
+    } else {
+        return;
+    }
 }
 
 // Launching a function in the thread
 void Thread::run_custom_job(std::function<void()> f) {
-    {
-        std::unique_lock<std::mutex> lk(mutex);
-        cv.wait(lk, [&] { return !searching; });
-        jobFunc   = std::move(f);
-        searching = true;
+    if (has_native_thread) {
+        {
+            std::unique_lock<std::mutex> lk(mutex);
+            cv.wait(lk, [&] { return !searching; });
+            jobFunc   = std::move(f);
+            searching = true;
+        }
+        cv.notify_one();
+    } else {
+        f();
     }
-    cv.notify_one();
 }
 
 void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); }
@@ -198,8 +205,8 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
             auto binder = doBindThreads ? OptionalThreadToNumaNodeBinder(numaConfig, numaId)
                                         : OptionalThreadToNumaNodeBinder(numaId);
 
-            threads.emplace_back(
-              std::make_unique<Thread>(sharedState, std::move(manager), threadId, binder));
+            bool startNative = (requested > 1) || (threadId > 0);
+            threads.emplace_back(std::make_unique<Thread>(sharedState, std::move(manager), threadId, binder, startNative));
         }
 
         clear();
