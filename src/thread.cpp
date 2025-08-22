@@ -41,35 +41,43 @@ namespace Stockfish {
 Thread::Thread(Search::SharedState&                    sharedState,
                std::unique_ptr<Search::ISearchManager> sm,
                size_t                                  n,
-               OptionalThreadToNumaNodeBinder          binder) :
+               OptionalThreadToNumaNodeBinder          binder,
+               bool                                    startNativeThread) :
     idx(n),
-    nthreads(sharedState.options["Threads"]),
-    stdThread(&Thread::idle_loop, this) {
+    nthreads(static_cast<size_t>(sharedState.options["Threads"])),
+    has_native_thread(startNativeThread),
+    stdThread() {
 
-    wait_for_search_finished();
+    if (has_native_thread) {
+        stdThread.start(&Thread::idle_loop, this);
+        wait_for_search_finished();
 
-    run_custom_job([this, &binder, &sharedState, &sm, n]() {
-        // Use the binder to [maybe] bind the threads to a NUMA node before doing
-        // the Worker allocation. Ideally we would also allocate the SearchManager
-        // here, but that's minor.
+        run_custom_job([this, &binder, &sharedState, &sm, n]() {
+            this->numaAccessToken = binder();
+            this->worker = std::make_unique<Search::Worker>(sharedState, std::move(sm), n, this->numaAccessToken);
+        });
+
+        wait_for_search_finished();
+    }
+    else {
+        searching = false;
         this->numaAccessToken = binder();
-        this->worker =
-          std::make_unique<Search::Worker>(sharedState, std::move(sm), n, this->numaAccessToken);
-    });
-
-    wait_for_search_finished();
+        this->worker = std::make_unique<Search::Worker>(sharedState, std::move(sm), n, this->numaAccessToken);
+    }
 }
 
 
 // Destructor wakes up the thread in idle_loop() and waits
 // for its termination. Thread should be already waiting.
 Thread::~Thread() {
-
-    assert(!searching);
-
-    exit = true;
-    start_searching();
-    stdThread.join();
+    if (has_native_thread) {
+        assert(!searching);
+        exit = true;
+        start_searching();
+        stdThread.join();
+    } else {
+        assert(!searching);
+    }
 }
 
 // Wakes up the thread that will start the search
