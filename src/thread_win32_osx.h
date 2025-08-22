@@ -29,19 +29,21 @@
 
 #if defined(__APPLE__) || defined(__MINGW32__) || defined(__MINGW64__) || defined(USE_PTHREADS)
 
-    #include <pthread.h>
-    #include <functional>
+#include <pthread.h>
+#include <functional>
 
 namespace Stockfish {
 
 class NativeThread {
     pthread_t thread;
-
+    bool      started = false;
     static constexpr size_t TH_STACK_SIZE = 8 * 1024 * 1024;
 
-   public:
+  public:
+    NativeThread() : thread(), started(false) {}
+
     template<class Function, class... Args>
-    explicit NativeThread(Function&& fun, Args&&... args) {
+    void start(Function&& fun, Args&&... args) {
         auto func = new std::function<void()>(
           std::bind(std::forward<Function>(fun), std::forward<Args>(args)...));
 
@@ -51,16 +53,25 @@ class NativeThread {
 
         auto start_routine = [](void* ptr) -> void* {
             auto f = reinterpret_cast<std::function<void()>*>(ptr);
-            // Call the function
             (*f)();
             delete f;
             return nullptr;
         };
 
-        pthread_create(&thread, attr, start_routine, func);
+        if (pthread_create(&thread, attr, start_routine, func) == 0)
+            started = true;
+        else {
+            delete func;
+            started = false;
+        }
     }
 
-    void join() { pthread_join(thread, nullptr); }
+    void join() {
+        if (started) {
+            pthread_join(thread, nullptr);
+            started = false;
+        }
+    }
 };
 
 }  // namespace Stockfish
