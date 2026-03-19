@@ -118,6 +118,42 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
     stage = PROBCUT_TT + !(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm));
 }
 
+int MovePicker::score_quiet(Move m) const {
+
+    Color us = pos.side_to_move();
+
+    Bitboard threatByLesser[KING + 1];
+    threatByLesser[PAWN]   = 0;
+    threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
+    threatByLesser[ROOK] =
+      pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
+    threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
+    threatByLesser[KING]  = 0;
+
+    const Square    from = m.from_sq();
+    const Square    to   = m.to_sq();
+    const Piece     pc   = pos.moved_piece(m);
+    const PieceType pt   = type_of(pc);
+
+    int value = 2 * (*mainHistory)[us][m.raw()];
+    value += 2 * sharedHistory->pawn_entry(pos)[pc][to];
+    value += (*continuationHistory[0])[pc][to];
+    value += (*continuationHistory[1])[pc][to];
+    value += (*continuationHistory[2])[pc][to];
+    value += (*continuationHistory[3])[pc][to];
+    value += (*continuationHistory[5])[pc][to];
+
+    value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
+
+    int v = 20 * (bool(threatByLesser[pt] & from) - bool(threatByLesser[pt] & to));
+    value += PieceValue[pt] * v;
+
+    if (ply < LOW_PLY_HISTORY_SIZE)
+        value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
+
+    return value;
+}
+
 // Assigns a numerical value to each move in a list, used for sorting.
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history. Quiets moves are ordered using the history tables.
@@ -197,7 +233,10 @@ Move MovePicker::select(Pred filter) {
 
     for (; cur < endCur; ++cur)
         if (*cur != ttMove && filter())
+        {
+            lastMoveValue = cur->value;
             return *cur++;
+        }
 
     return Move::none();
 }
@@ -213,10 +252,15 @@ top:
     {
 
     case MAIN_TT :
+        ++stage;
+        lastMoveValue = pos.capture_stage(ttMove) ? 0 : score_quiet(ttMove);
+        return ttMove;
+
     case EVASION_TT :
     case QSEARCH_TT :
     case PROBCUT_TT :
         ++stage;
+        lastMoveValue = 0;
         return ttMove;
 
     case CAPTURE_INIT :
