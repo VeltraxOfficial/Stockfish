@@ -49,6 +49,7 @@ class MovePicker {
                int);
     MovePicker(const Position&, Move, int, const CapturePieceToHistory*);
     Move next_move();
+    int  last_score() const { return lastMoveValue; }
     void skip_quiet_moves();
 
    private:
@@ -56,6 +57,7 @@ class MovePicker {
     Move select(Pred);
     template<GenType T>
     ExtMove* score(MoveList<T>&);
+    int      score_quiet(Move) const;
     ExtMove* begin() { return cur; }
     ExtMove* end() { return endCur; }
 
@@ -72,6 +74,7 @@ class MovePicker {
     Depth                        depth;
     int                          ply;
     bool                         skipQuiets = false;
+    int                          lastMoveValue = 0;
     ExtMove                      moves[MAX_MOVES];
 };
 
