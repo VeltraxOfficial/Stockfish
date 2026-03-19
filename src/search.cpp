@@ -66,6 +66,7 @@ namespace {
 
 constexpr int SEARCHEDLIST_CAPACITY = 32;
 using SearchedList                  = ValueList<Move, SEARCHEDLIST_CAPACITY>;
+constexpr int QUIET_QUALITY_LIMIT   = 30000;
 
 // (*Scalers):
 // The values with Scaler asterisks have proven non-linear scaling.
@@ -149,6 +150,8 @@ bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
     return move.from_sq() == (ss - 2)->currentMove.to_sq()
         && (ss - 2)->currentMove.from_sq() == (ss - 4)->currentMove.to_sq();
 }
+
+int quiet_quality(int score) { return std::clamp(score, -QUIET_QUALITY_LIMIT, QUIET_QUALITY_LIMIT); }
 
 }  // namespace
 
@@ -1039,6 +1042,8 @@ moves_loop:  // When in check, search starts here
         if (rootNode && !std::count(rootMoves.begin() + pvIdx, rootMoves.begin() + pvLast, move))
             continue;
 
+        const int moveScore = mp.last_score();
+
         ss->moveCount = ++moveCount;
 
         if (rootNode && is_mainthread() && nodes > 10000000)
@@ -1053,6 +1058,7 @@ moves_loop:  // When in check, search starts here
         capture    = pos.capture_stage(move);
         movedPiece = pos.moved_piece(move);
         givesCheck = pos.gives_check(move);
+        int moveQuality = (!ss->inCheck && !capture) ? quiet_quality(moveScore) : 0;
 
         // Calculate new depth for this move
         newDepth = depth - 1;
@@ -1101,15 +1107,16 @@ moves_loop:  // When in check, search starts here
             }
             else if (!ss->followPV || !PvNode)
             {
-                int history = (*contHist[0])[movedPiece][move.to_sq()]
-                            + (*contHist[1])[movedPiece][move.to_sq()]
-                            + sharedHistory.pawn_entry(pos)[movedPiece][move.to_sq()];
+                int history = (!ss->inCheck && !givesCheck)
+                            ? moveQuality
+                            : (*contHist[0])[movedPiece][move.to_sq()]
+                                + (*contHist[1])[movedPiece][move.to_sq()]
+                                + sharedHistory.pawn_entry(pos)[movedPiece][move.to_sq()]
+                                + 71 * mainHistory[us][move.raw()] / 32;
 
                 // Continuation history based pruning
                 if (history < -4097 * depth)
                     continue;
-
-                history += 71 * mainHistory[us][move.raw()] / 32;
 
                 // (*Scaler): Generally, lower divisors scales well
                 lmrDepth += history / 2995;
@@ -1235,6 +1242,8 @@ moves_loop:  // When in check, search starts here
         if (capture)
             ss->statScore = 863 * int(PieceValue[pos.captured_piece()]) / 128
                           + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
+        else if (!ss->inCheck)
+            ss->statScore = moveQuality;
         else
             ss->statScore = 2 * mainHistory[us][move.raw()]
                           + (*contHist[0])[movedPiece][move.to_sq()]
