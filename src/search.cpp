@@ -761,6 +761,11 @@ Value Search::Worker::search(
                        unadjustedStaticEval, tt.generation());
     }
 
+    // Reuse TT-backed lower bounds as a stronger stand-pat signal for null-move
+    // pruning, but do not let TT upper bounds block attempts that the raw
+    // static eval would already allow.
+    const Value nmpEval = std::max(eval, ss->staticEval);
+
     // Set up the improving flag, which is true if current static evaluation is
     // bigger than the previous static evaluation at our turn (if we were in
     // check at our previous move we go back until we weren't in check) and is
@@ -910,7 +915,7 @@ Value Search::Worker::search(
     }
 
     // Step 9. Null move search with verification search
-    if (cutNode && ss->staticEval >= beta - 16 * depth - 53 * improving + 378 && !excludedMove
+    if (cutNode && nmpEval >= beta - 16 * depth - 53 * improving + 378 && !excludedMove
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
         assert((ss - 1)->currentMove != Move::null());
@@ -944,7 +949,7 @@ Value Search::Worker::search(
         }
     }
 
-    improving |= ss->staticEval >= beta;
+    improving |= nmpEval >= beta;
 
     // Step 10. Internal iterative reductions
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
