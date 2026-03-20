@@ -1243,6 +1243,11 @@ moves_loop:  // When in check, search starts here
         // Decrease/increase reduction for moves with a good/bad history
         r -= ss->statScore * 428 / 4096;
 
+        if (!capture && ss->ply < LOW_PLY_HISTORY_SIZE)
+            r -= std::min(std::max(int(lowPlyHistory[ss->ply][move.raw()]) - 98, 0)
+                              * (LOW_PLY_HISTORY_SIZE - ss->ply) * 428 / 4096,
+                          1024);
+
         // Scale up reductions for expected ALL nodes
         if (allNode)
             r += r * 273 / (256 * depth + 260);
