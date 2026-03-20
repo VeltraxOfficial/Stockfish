@@ -1236,9 +1236,23 @@ moves_loop:  // When in check, search starts here
             ss->statScore = 863 * int(PieceValue[pos.captured_piece()]) / 128
                           + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
         else
-            ss->statScore = 2 * mainHistory[us][move.raw()]
-                          + (*contHist[0])[movedPiece][move.to_sq()]
-                          + (*contHist[1])[movedPiece][move.to_sq()];
+        {
+            int lpHist = 0;
+
+            if (ss->ply < LOW_PLY_HISTORY_SIZE)
+            {
+                const int raw = lowPlyHistory[ss->ply][move.raw()];
+
+                lpHist = raw * (LOW_PLY_HISTORY_SIZE - ss->ply)
+                       / (2 * LOW_PLY_HISTORY_SIZE);
+            }
+
+            ss->statScore =
+                  2 * mainHistory[us][move.raw()]
+                + (*contHist[0])[movedPiece][move.to_sq()]
+                + (*contHist[1])[movedPiece][move.to_sq()]
+                + lpHist;
+        }
 
         // Decrease/increase reduction for moves with a good/bad history
         r -= ss->statScore * 428 / 4096;
