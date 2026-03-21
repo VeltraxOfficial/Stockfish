@@ -1537,7 +1537,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     Move  move, bestMove;
     Value bestValue, value, futilityBase;
     bool  pvHit, givesCheck, capture;
-    int   moveCount;
+    int   moveCount, searchedCaptureCount;
 
     // Step 1. Initialize node
     if (PvNode)
@@ -1548,7 +1548,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     bestMove    = Move::none();
     ss->inCheck = pos.checkers();
-    moveCount   = 0;
+    moveCount = searchedCaptureCount = 0;
 
     // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
     if (PvNode && selDepth < ss->ply + 1)
@@ -1687,6 +1687,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 continue;
         }
 
+        searchedCaptureCount += capture;
+
         // Step 7. Make and search the move
         do_move(pos, move, st, givesCheck, ss);
 
@@ -1710,7 +1712,13 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 if (value < beta)  // Update alpha here!
                     alpha = value;
                 else
+                {
+                    if (!ss->inCheck && capture && searchedCaptureCount > 1)
+                        captureHistory[pos.moved_piece(move)][move.to_sq()][type_of(
+                          pos.piece_on(move.to_sq()))]
+                          << std::min(32 * (searchedCaptureCount - 1), 96);
                     break;  // Fail high
+                }
             }
         }
     }
