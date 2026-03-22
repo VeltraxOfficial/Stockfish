@@ -73,18 +73,18 @@ constexpr int SEARCHEDLIST_CAPACITY = 32;
 using SearchedList                  = ValueList<SearchedMove, SEARCHEDLIST_CAPACITY>;
 
 void sort_searched_list(SearchedList& list) {
-    for (auto it = list.begin() + 1; it != list.end(); ++it)
+    for (int i = 1; i < list.size(); ++i)
     {
-        SearchedMove key = *it;
-        auto         jt  = it;
+        SearchedMove key = list[i];
+        int j = i - 1;
 
-        while (jt != list.begin() && (jt - 1)->score > key.score)
+        while (j >= 0 && list[j].score > key.score)
         {
-            *jt = *(jt - 1);
-            --jt;
+            list[j + 1] = list[j];
+            --j;
         }
 
-        *jt = key;
+        list[j + 1] = key;
     }
 }
 
