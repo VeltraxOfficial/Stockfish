@@ -64,8 +64,29 @@ using namespace Search;
 
 namespace {
 
+struct SearchedMove {
+    Move  move;
+    Value score;
+};
+
 constexpr int SEARCHEDLIST_CAPACITY = 32;
-using SearchedList                  = ValueList<Move, SEARCHEDLIST_CAPACITY>;
+using SearchedList                  = ValueList<SearchedMove, SEARCHEDLIST_CAPACITY>;
+
+void sort_searched_list(SearchedList& list) {
+    for (auto it = list.begin() + 1; it != list.end(); ++it)
+    {
+        SearchedMove key = *it;
+        auto         jt  = it;
+
+        while (jt != list.begin() && (jt - 1)->score > key.score)
+        {
+            *jt = *(jt - 1);
+            --jt;
+        }
+
+        *jt = key;
+    }
+}
 
 // (*Scalers):
 // The values with Scaler asterisks have proven non-linear scaling.
@@ -1405,14 +1426,12 @@ moves_loop:  // When in check, search starts here
             }
         }
 
-        // If the move is worse than some previously searched move,
-        // remember it, to update its stats later.
         if (move != bestMove && moveCount <= SEARCHEDLIST_CAPACITY)
         {
             if (capture)
-                capturesSearched.push_back(move);
+                capturesSearched.push_back({move, value - alpha});
             else
-                quietsSearched.push_back(move);
+                quietsSearched.push_back({move, value - alpha});
         }
     }
 
@@ -1854,16 +1873,18 @@ void update_all_stats(const Position& pos,
       std::min(128 * depth - 77, 1529) + 353 * (bestMove == ttMove) + (ss - 1)->statScore / 32;
     int malus = std::min(882 * depth - 204, 2122);
 
+    sort_searched_list(quietsSearched);
+    sort_searched_list(capturesSearched);
+
     if (!pos.capture_stage(bestMove))
     {
         update_quiet_histories(pos, ss, workerThread, bestMove, bonus * 806 / 1024);
 
         int actualMalus = malus * 1113 / 1024;
-        // Decrease stats for all non-best quiet moves
-        for (Move move : quietsSearched)
+        for (const auto& searched : quietsSearched)
         {
             actualMalus = actualMalus * 977 / 1024;
-            update_quiet_histories(pos, ss, workerThread, move, -actualMalus);
+            update_quiet_histories(pos, ss, workerThread, searched.move, -actualMalus);
         }
     }
     else
@@ -1878,12 +1899,11 @@ void update_all_stats(const Position& pos,
     if (prevSq != SQ_NONE && ((ss - 1)->moveCount == 1 + (ss - 1)->ttHit) && !pos.captured_piece())
         update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, -malus * 616 / 1024);
 
-    // Decrease stats for all non-best capture moves
-    for (Move move : capturesSearched)
+    for (const auto& searched : capturesSearched)
     {
-        movedPiece    = pos.moved_piece(move);
-        capturedPiece = type_of(pos.piece_on(move.to_sq()));
-        captureHistory[movedPiece][move.to_sq()][capturedPiece] << -malus * 1559 / 1024;
+        movedPiece    = pos.moved_piece(searched.move);
+        capturedPiece = type_of(pos.piece_on(searched.move.to_sq()));
+        captureHistory[movedPiece][searched.move.to_sq()][capturedPiece] << -malus * 1559 / 1024;
     }
 }
 
