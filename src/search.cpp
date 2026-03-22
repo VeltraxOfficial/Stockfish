@@ -72,19 +72,25 @@ struct SearchedMove {
 constexpr int SEARCHEDLIST_CAPACITY = 32;
 using SearchedList                  = ValueList<SearchedMove, SEARCHEDLIST_CAPACITY>;
 
-void sort_searched_list(SearchedList& list) {
-    for (int i = 1; i < list.size(); ++i)
-    {
-        SearchedMove key = list[i];
-        int j = i - 1;
+template<int N>
+void sort_indices(const ValueList<SearchedMove, N>& list, int* idx) {
+    int n = list.size();
 
-        while (j >= 0 && list[j].score > key.score)
+    for (int i = 0; i < n; ++i)
+        idx[i] = i;
+
+    for (int i = 1; i < n; ++i)
+    {
+        int key = idx[i];
+        int j   = i - 1;
+
+        while (j >= 0 && list[idx[j]].score > list[key].score)
         {
-            list[j + 1] = list[j];
+            idx[j + 1] = idx[j];
             --j;
         }
 
-        list[j + 1] = key;
+        idx[j + 1] = key;
     }
 }
 
@@ -1876,13 +1882,22 @@ void update_all_stats(const Position& pos,
     sort_searched_list(quietsSearched);
     sort_searched_list(capturesSearched);
 
+    int quietIdx[SEARCHEDLIST_CAPACITY];
+    sort_indices(quietsSearched, quietIdx);
+
+    int captureIdx[SEARCHEDLIST_CAPACITY];
+    sort_indices(capturesSearched, captureIdx);
+
     if (!pos.capture_stage(bestMove))
     {
         update_quiet_histories(pos, ss, workerThread, bestMove, bonus * 806 / 1024);
 
         int actualMalus = malus * 1113 / 1024;
-        for (const auto& searched : quietsSearched)
+        int n = quietsSearched.size();
+
+        for (int k = 0; k < n; ++k)
         {
+            const auto& searched = quietsSearched[quietIdx[k]];
             actualMalus = actualMalus * 977 / 1024;
             update_quiet_histories(pos, ss, workerThread, searched.move, -actualMalus);
         }
@@ -1899,12 +1914,16 @@ void update_all_stats(const Position& pos,
     if (prevSq != SQ_NONE && ((ss - 1)->moveCount == 1 + (ss - 1)->ttHit) && !pos.captured_piece())
         update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, -malus * 616 / 1024);
 
-    for (const auto& searched : capturesSearched)
+    int nCap = capturesSearched.size();
+
+    for (int k = 0; k < nCap; ++k)
     {
+        const auto& searched = capturesSearched[captureIdx[k]];
         movedPiece    = pos.moved_piece(searched.move);
         capturedPiece = type_of(pos.piece_on(searched.move.to_sq()));
         captureHistory[movedPiece][searched.move.to_sq()][capturedPiece] << -malus * 1559 / 1024;
     }
+
 }
 
 
