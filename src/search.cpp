@@ -955,7 +955,9 @@ Value Search::Worker::search(
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
-    probCutBeta = beta + 224 - 61 * improving;
+    // Increase the margin if correction history indicates unstable evaluation to avoid
+    // pruning based on unreliable shallow search results.
+    probCutBeta = beta + 224 - 61 * improving + std::abs(correctionValue) / 131072;
     if (depth >= 3
         && !is_decisive(beta)
         // If value from transposition table is lower than probCutBeta, don't attempt
