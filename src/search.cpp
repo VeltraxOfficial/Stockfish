@@ -1095,7 +1095,7 @@ moves_loop:  // When in check, search starts here
 
             if (capture || givesCheck)
             {
-                Piece capturedPiece = pos.piece_on(move.to_sq());
+                Piece capturedPiece = move.type_of() == EN_PASSANT ? make_piece(~pos.side_to_move(), PAWN) : pos.piece_on(move.to_sq());
                 int   captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
 
                 // Futility pruning for captures
@@ -1391,7 +1391,7 @@ moves_loop:  // When in check, search starts here
 
         // In case we have an alternative move equal in eval to the current bestmove,
         // promote it to bestmove by pretending it just exceeds alpha (but not beta).
-        int inc = (value == bestValue && ss->ply + 2 >= rootDepth && (int(nodes) & 14) == 0
+        int inc = (value == bestValue && ss->ply + 2 >= rootDepth && (nodes.load() & 14) == 0
                    && !is_win(std::abs(value) + 1));
 
         if (value + inc > bestValue)
@@ -1573,7 +1573,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     // Step 2. Check for an immediate draw or maximum ply reached
     if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY)
-        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
+        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : value_draw(nodes);
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
@@ -1871,7 +1871,7 @@ void update_all_stats(const Position& pos,
     else
     {
         // Increase stats for the best move in case it was a capture move
-        capturedPiece = type_of(pos.piece_on(bestMove.to_sq()));
+        capturedPiece = bestMove.type_of() == EN_PASSANT ? PAWN : type_of(pos.piece_on(bestMove.to_sq()));
         captureHistory[movedPiece][bestMove.to_sq()][capturedPiece] << bonus * 1286 / 1024;
     }
 
@@ -1884,7 +1884,7 @@ void update_all_stats(const Position& pos,
     for (Move move : capturesSearched)
     {
         movedPiece    = pos.moved_piece(move);
-        capturedPiece = type_of(pos.piece_on(move.to_sq()));
+        capturedPiece = move.type_of() == EN_PASSANT ? PAWN : type_of(pos.piece_on(move.to_sq()));
         captureHistory[movedPiece][move.to_sq()][capturedPiece] << -malus * 1559 / 1024;
     }
 }
