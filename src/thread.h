@@ -102,10 +102,9 @@ class Thread {
    private:
     std::mutex                mutex;
     std::condition_variable   cv;
-    size_t                    idx, idxInNuma, totalNuma, nthreads;
+    size_t                    idx;
     bool                      exit = false, searching = true;  // Set before starting std::thread
     NativeThread              stdThread;
-    NumaReplicatedAccessToken numaAccessToken;
 };
 
 
@@ -153,7 +152,7 @@ class ThreadPool {
 
     void ensure_network_replicated();
 
-    std::atomic_bool stop, increaseDepth;
+    std::atomic_bool stop{false}, increaseDepth{true};
 
     auto cbegin() const noexcept { return threads.cbegin(); }
     auto begin() noexcept { return threads.begin(); }
