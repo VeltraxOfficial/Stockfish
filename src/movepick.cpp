@@ -149,11 +149,11 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
         const Square    to            = m.to_sq();
         const Piece     pc            = pos.moved_piece(m);
         const PieceType pt            = type_of(pc);
-        const Piece     capturedPiece = pos.piece_on(to);
+        const Piece     capturedPiece = m.type_of() == EN_PASSANT ? make_piece(~us, PAWN) : pos.piece_on(to);
 
         if constexpr (Type == CAPTURES)
             m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]
-                    + 7 * int(PieceValue[capturedPiece]);
+                    + 7 * PieceValue[capturedPiece];
 
         else if constexpr (Type == QUIETS)
         {
@@ -273,8 +273,11 @@ top:
             return *(cur - 1);
 
         // Prepare the pointers to loop over quiets again
-        cur    = endCaptures;
-        endCur = endGenerated;
+        if (!skipQuiets)
+        {
+            cur    = endCaptures;
+            endCur = endGenerated;
+        }
 
         ++stage;
         [[fallthrough]];
