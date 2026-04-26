@@ -51,20 +51,14 @@ Thread::Thread(Search::SharedState&                    sharedState,
                size_t                                  totalNumaCount,
                OptionalThreadToNumaNodeBinder          binder) :
     idx(n),
-    idxInNuma(numaN),
-    totalNuma(totalNumaCount),
-    nthreads(sharedState.options["Threads"]),
     stdThread(&Thread::idle_loop, this) {
 
     wait_for_search_finished();
 
-    run_custom_job([this, &binder, &sharedState, &sm, n]() {
-        // Use the binder to [maybe] bind the threads to a NUMA node before doing
-        // the Worker allocation. Ideally we would also allocate the SearchManager
-        // here, but that's minor.
-        this->numaAccessToken = binder();
-        this->worker          = make_unique_large_page<Search::Worker>(
-          sharedState, std::move(sm), n, idxInNuma, totalNuma, this->numaAccessToken);
+    run_custom_job([this, &binder, &sharedState, &sm, n, numaN, totalNumaCount]() {
+        auto token        = binder();
+        this->worker      = make_unique_large_page<Search::Worker>(
+          sharedState, std::move(sm), n, numaN, totalNumaCount, token);
     });
 
     wait_for_search_finished();
@@ -349,14 +343,14 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
 Thread* ThreadPool::get_best_thread() const {
 
     Thread* bestThread = threads.front().get();
-    Value   minScore   = VALUE_NONE;
+    Value   minScore   = threads.front()->worker->rootMoves[0].score;
 
     std::unordered_map<Move, int64_t, Move::MoveHash> votes(
       2 * std::min(size(), bestThread->worker->rootMoves.size()));
 
     // Find the minimum score of all threads
-    for (auto&& th : threads)
-        minScore = std::min(minScore, th->worker->rootMoves[0].score);
+    for (size_t i = 1; i < threads.size(); ++i)
+        minScore = std::min(minScore, threads[i]->worker->rootMoves[0].score);
 
     // Vote according to score and depth, and select the best thread
     auto thread_voting_value = [minScore](Thread* th) {
@@ -394,8 +388,8 @@ Thread* ThreadPool::get_best_thread() const {
 
         if (bestThreadDecisive)
         {
-            // Make sure we pick the shortest mate / TB conversion.
-            if (newThreadDecisive && std::abs(newThreadScore) > std::abs(bestThreadScore))
+            // Make sure we pick the best decisive score.
+            if (newThreadDecisive && newThreadScore > bestThreadScore)
             {
                 assert((is_win(bestThreadScore) && is_win(newThreadScore))
                        || (is_loss(bestThreadScore) && is_loss(newThreadScore)));
