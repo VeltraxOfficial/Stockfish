@@ -78,7 +78,9 @@ struct StatsEntry {
         // Make sure that bonus is in range [-D, D]
         int clampedBonus = std::clamp(bonus, -D, D);
         T   val          = *this;
-        *this            = val + clampedBonus - val * std::abs(clampedBonus) / D;
+        static_assert(int64_t(D) * D <= std::numeric_limits<int>::max(),
+                      "D*D must not overflow int in operator<<");
+        *this = val + clampedBonus - val * std::abs(clampedBonus) / D;
 
         assert(std::abs(T(*this)) <= D);
     }
@@ -198,12 +200,6 @@ struct CorrHistTypedef<Continuation> {
     using type = MultiArray<CorrHistTypedef<PieceTo>::type, PIECE_NB, SQUARE_NB>;
 };
 
-template<>
-struct CorrHistTypedef<NonPawn> {
-    using type = DynStats<Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, COLOR_NB, COLOR_NB>,
-                          CORRHIST_BASE_SIZE>;
-};
-
 }
 
 using UnifiedCorrectionHistory =
@@ -227,8 +223,6 @@ struct SharedHistories {
         sizeMinus1         = correctionHistory.get_size() - 1;
         pawnHistSizeMinus1 = pawnHistory.get_size() - 1;
     }
-
-    size_t get_size() const { return sizeMinus1 + 1; }
 
     auto& pawn_entry(const Position& pos) {
         return pawnHistory[pos.pawn_key() & pawnHistSizeMinus1];
