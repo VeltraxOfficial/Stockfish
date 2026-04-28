@@ -153,7 +153,7 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
         if constexpr (Type == CAPTURES)
             m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]
-                    + 7 * int(PieceValue[capturedPiece]);
+                    + 7 * PieceValue[capturedPiece];
 
         else if constexpr (Type == QUIETS)
         {
@@ -273,8 +273,11 @@ top:
             return *(cur - 1);
 
         // Prepare the pointers to loop over quiets again
-        cur    = endCaptures;
-        endCur = endGenerated;
+        if (!skipQuiets)
+        {
+            cur    = endCaptures;
+            endCur = endGenerated;
+        }
 
         ++stage;
         [[fallthrough]];
